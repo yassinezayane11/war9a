@@ -11,7 +11,6 @@ const depositRoutes = require('./routes/deposits');
 const ticketRoutes = require('./routes/tickets');
 const adminRoutes = require('./routes/admin');
 
-// Ensure Settings model is loaded so the collection exists
 require('./models/Settings');
 require('./models/PromoUsage');
 
@@ -25,10 +24,26 @@ const limiter = rateLimit({
 });
 
 app.use(limiter);
-app.use(cors({ origin: process.env.FRONTEND_URL || 'http://localhost:3000', credentials: true }));
+
+// ✅ CORS (مصلح)
+app.use(cors({
+  origin: "*",
+  credentials: true
+}));
+
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
+// ✅ ROOT (باش ماعادش يطلع Cannot GET /)
+app.get('/', (req, res) => {
+  res.send('War9a API is running 🚀');
+});
+
+// ✅ API test
+app.get('/api', (req, res) => {
+  res.send('API is working 🚀');
+});
 
 // Routes
 app.use('/api/auth', authRoutes);
@@ -41,7 +56,7 @@ app.use('/api/admin', adminRoutes);
 app.get('/api/health', (req, res) => res.json({ status: 'ok', app: 'war9a.tn' }));
 
 // MongoDB connection
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/war9atn';
+const MONGODB_URI = process.env.MONGODB_URI;
 mongoose.connect(MONGODB_URI)
   .then(() => console.log('✅ MongoDB connected'))
   .catch(err => console.error('MongoDB error:', err));
