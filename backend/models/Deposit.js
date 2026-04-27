@@ -15,7 +15,7 @@ const depositSchema = new mongoose.Schema({
   processedBy:   { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
 }, { timestamps: true });
 
-depositSchema.index({ screenshotHash: 1 }, { unique: true });
-depositSchema.index({ orangeCode: 1 },     { unique: true, sparse: true });
+depositSchema.index({ screenshotHash: 1 });
+depositSchema.index({ orangeCode: 1 });
 
 module.exports = mongoose.model('Deposit', depositSchema);
