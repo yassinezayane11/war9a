@@ -11,7 +11,7 @@ const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 10, message: 'Too
 
 // ── POST /auth/register ──────────────────────────────────────────────────────
 router.post('/register', authLimiter, [
-  body('phone').matches(/^\d{8}$/).withMessage('Le numéro doit avoir exactement 8 chiffres'),
+  body('phone').matches(/^\d{5}$/).withMessage('Le numéro doit avoir exactement 8 chiffres'),
   body('name').trim().notEmpty().withMessage('Le nom est obligatoire').isLength({ min: 2 }),
   body('password').isLength({ min: 6 }).withMessage('Mot de passe minimum 6 caractères'),
   body('email').optional({ nullable: true, checkFalsy: true }).isEmail().withMessage('Email invalide'),
