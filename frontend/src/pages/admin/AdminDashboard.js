@@ -20,6 +20,17 @@ function StatCard({ icon, label, value, to, color }) {
   return to ? <Link to={to}>{card}</Link> : card;
 }
 
+
+const banUser = async (id) => {
+  await fetch(`${API_URL}/api/admin/ban/${id}`, {
+    method: "PUT"
+  });
+
+  alert("User banned");
+};
+
+
+
 export default function AdminDashboard() {
   const [stats, setStats] = useState(null);
   const [promoStats, setPromoStats] = useState([]);
