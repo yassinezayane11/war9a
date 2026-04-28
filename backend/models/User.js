@@ -15,7 +15,9 @@ const userSchema = new mongoose.Schema({
   // Promo / referral system
   promoCode: { type: String, unique: true, sparse: true },   // this user's own code
   referredBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null }, // who referred them
-  referralCount: { type: Number, default: 0 },               // how many they referred
+  referralCount: { type: Number, default: 0 },   
+  fingerprint: { type: String },
+  isBanned: { type: Boolean, default: false },            // how many they referred
 }, { timestamps: true });
 
 // Auto-generate promoCode before save
