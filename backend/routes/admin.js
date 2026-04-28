@@ -10,9 +10,6 @@ const Settings = require('../models/Settings');
 const { authenticate, adminOnly } = require('../middleware/auth');
 
 
-const express = require('express');
-const router = express.Router();
-const User = require('../models/User');
 
 // BAN USER + DEVICE
 router.put('/ban/:id', async (req, res) => {
