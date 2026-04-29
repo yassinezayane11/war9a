@@ -149,7 +149,7 @@ return ( <div className="space-y-6 animate-fadeInUp">
                     {u.isActive ? 'Désactiver' : 'Activer'}
                   </button>
 
-                  {/* 🔥 BAN BUTTON */}
+                  
                   <button
                     onClick={() => banUser(u._id)}
                     className="text-xs py-1.5 px-3 rounded-lg bg-red-600/20 text-red-400 border border-red-500/30"
@@ -180,9 +180,17 @@ return ( <div className="space-y-6 animate-fadeInUp">
                       </button>
 
                       {/* 🔥 BAN */}
-                      <button onClick={() => banUser(u._id)}>
-                        Ban
-                      </button>
+                      <button
+  onClick={() => banUser(u._id)}
+  style={{
+    background: "red",
+    color: "white",
+    padding: "5px 10px",
+    marginLeft: "10px"
+  }}
+>
+  Ban
+</button>
                     </>
                   )}
                 </td>
