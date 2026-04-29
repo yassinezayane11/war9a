@@ -55,6 +55,7 @@ app.use('/api/admin', adminRoutes);
 // Health check
 app.get('/api/health', (req, res) => res.json({ status: 'ok', app: 'war9a.tn' }));
 
+console.log("MONGODB_URI =", process.env.MONGODB_URI);
 // MongoDB connection
 const MONGODB_URI = process.env.MONGODB_URI;
 mongoose.connect(MONGODB_URI)
