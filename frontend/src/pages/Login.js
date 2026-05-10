@@ -34,7 +34,7 @@ export default function Login() {
       login(data.token, data.user);
       toast.success(`Bienvenue, ${data.user.name}!`);
 
-      navigate(data.user.role === 'admin' ? '/admin' : '/');
+      navigate(data.user.role === 'admin' ? '/admin' : '/tickets');
 
     } catch (err) {
       toast.error(err.response?.data?.message || 'Identifiants invalides');

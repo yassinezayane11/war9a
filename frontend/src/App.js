@@ -69,6 +69,17 @@ export default function App() {
             <Route path="/register" element={<PublicRoute><Register /></PublicRoute>} />
             <Route path="/verify-email" element={<VerifyEmail />} />
 
+            {/* Protected routes (top-level) */}
+            <Route path="/tickets" element={<PrivateRoute><Layout /></PrivateRoute>}>
+              <Route index element={<Tickets />} />
+            </Route>
+            <Route path="/deposit" element={<PrivateRoute><Layout /></PrivateRoute>}>
+              <Route index element={<Deposit />} />
+            </Route>
+            <Route path="/wallet" element={<PrivateRoute><Layout /></PrivateRoute>}>
+              <Route index element={<Wallet />} />
+            </Route>
+
             {/* Protected User Routes */}
             <Route path="/dashboard" element={<PrivateRoute><Layout /></PrivateRoute>}>
               <Route index element={<Dashboard />} />
