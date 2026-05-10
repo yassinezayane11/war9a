@@ -46,9 +46,9 @@ function AdminRoute({ children }) {
 }
 
 function PublicRoute({ children }) {
-  const { user, loading } = useAuth();
+  const { loading } = useAuth();
   if (loading) return <PageLoader />;
-  return user ? <Navigate to="/" /> : children;
+  return children;
 }
 
 function LandingRoute({ children }) {
