@@ -8,16 +8,30 @@ const userSchema = new mongoose.Schema({
     validate: { validator: v => /^\d{8}$/.test(v), message: 'Phone must be 8 digits' }
   },
   email: { type: String, trim: true, lowercase: true, sparse: true, default: null },
+  emailVerified: { type: Boolean, default: false },
+  emailVerificationToken: { type: String, default: null },
+  emailVerificationExpires: { type: Date, default: null },
   password: { type: String, required: true, minlength: 6 },
   role: { type: String, enum: ['user', 'admin'], default: 'user' },
   balance: { type: Number, default: 0, min: 0 },
   isActive: { type: Boolean, default: true },
   // Promo / referral system
-  promoCode: { type: String, unique: true, sparse: true },   // this user's own code
-  referredBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null }, // who referred them
-  referralCount: { type: Number, default: 0 },   
+  promoCode: { type: String, unique: true, sparse: true },
+  referredBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+  referralCount: { type: Number, default: 0 },
+  // Device fingerprinting
   fingerprint: { type: String },
-  isBanned: { type: Boolean, default: false },            // how many they referred
+  userAgent: { type: String },
+  lastIP: { type: String },
+  isBanned: { type: Boolean, default: false },
+  banReason: { type: String, default: null },
+  bannedAt: { type: Date, default: null },
+  // Notifications
+  emailNotifications: {
+    newTicket: { type: Boolean, default: true },
+    depositUpdates: { type: Boolean, default: true },
+    promotions: { type: Boolean, default: true }
+  }
 }, { timestamps: true });
 
 // Auto-generate promoCode before save

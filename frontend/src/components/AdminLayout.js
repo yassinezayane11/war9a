@@ -38,6 +38,19 @@ export default function AdminLayout() {
         <AdminNav to="/admin/deposits" icon="💰" label="Dépôts" />
         <AdminNav to="/admin/tickets" icon="🎫" label="Tickets" />
         <AdminNav to="/admin/users" icon="👥" label="Utilisateurs" />
+
+        <div className="pt-4 mt-4">
+          <div className="text-xs text-gray-600 uppercase font-semibold px-4 mb-2">Sécurité</div>
+          <AdminNav to="/admin/banned-devices" icon="🚫" label="Appareils Bannis" />
+        </div>
+
+        <div className="pt-4">
+          <div className="text-xs text-gray-600 uppercase font-semibold px-4 mb-2">Marketing</div>
+          <AdminNav to="/admin/marketing" icon="🖼️" label="Images Promo" />
+          <AdminNav to="/admin/testimonials" icon="💬" label="Témoignages" />
+          <AdminNav to="/admin/email-broadcast" icon="📧" label="Email Broadcast" />
+        </div>
+
         <div className="pt-4 border-t border-dark-600 mt-4">
           <AdminNav to="/" icon="🏠" label="Vue utilisateur" />
         </div>

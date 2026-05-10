@@ -1,76 +1,82 @@
 const mongoose = require('mongoose');
 
 const depositSchema = new mongoose.Schema({
-  userId: { 
-    type: mongoose.Schema.Types.ObjectId, 
-    ref: 'User', 
-    required: true 
+  userId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
   },
 
-  amount: { 
-    type: Number, 
-    required: true, 
-    min: [1, 'Amount must be > 0'] 
+  amount: {
+    type: Number,
+    required: true,
+    min: [1, 'Amount must be > 0']
   },
 
-  method: { 
-    type: String, 
-    enum: ['D17', 'ORANGE'], 
-    default: 'D17' 
+  method: {
+    type: String,
+    enum: ['D17', 'ORANGE'],
+    default: 'D17'
   },
 
-  // ✅ ماعادش obligatoire
-  screenshot: { 
-    type: String, 
-    default: null 
+  // Cloudinary image URL
+  screenshot: {
+    type: String,
+    default: null
   },
 
-  screenshotHash: { 
-    type: String, 
-    default: null 
+  // Cloudinary public_id for deletion
+  screenshotPublicId: {
+    type: String,
+    default: null
   },
 
-  // ✅ لازم ل ORANGE
-  orangeCode: { 
-    type: String, 
-    default: null 
+  screenshotHash: {
+    type: String,
+    default: null
   },
 
-  promoCode: { 
-    type: String, 
-    default: null 
+  orangeCode: {
+    type: String,
+    default: null
   },
 
-  promoBonus: { 
-    type: Number, 
-    default: 0 
+  promoCode: {
+    type: String,
+    default: null
   },
 
-  status: { 
-    type: String, 
-    enum: ['pending', 'approved', 'rejected'], 
-    default: 'pending' 
+  promoBonus: {
+    type: Number,
+    default: 0
   },
 
-  adminNote: { 
-    type: String, 
-    default: null 
+  status: {
+    type: String,
+    enum: ['pending', 'approved', 'rejected'],
+    default: 'pending'
   },
 
-  processedAt: { 
-    type: Date, 
-    default: null 
+  adminNote: {
+    type: String,
+    default: null
   },
 
-  processedBy: { 
-    type: mongoose.Schema.Types.ObjectId, 
-    ref: 'User', 
-    default: null 
+  processedAt: {
+    type: Date,
+    default: null
+  },
+
+  processedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    default: null
   },
 
 }, { timestamps: true });
 
 depositSchema.index({ screenshotHash: 1 });
 depositSchema.index({ orangeCode: 1 });
+depositSchema.index({ status: 1, createdAt: -1 });
 
 module.exports = mongoose.model('Deposit', depositSchema);

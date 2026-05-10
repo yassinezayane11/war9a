@@ -113,4 +113,5 @@ return ( <div className="min-h-screen bg-dark-900 flex items-center justify-cent
     </div>
   </div>
 </div>
+);
 }

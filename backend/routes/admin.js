@@ -1,38 +1,93 @@
 const express = require('express');
 const router = express.Router();
+const multer = require('multer');
+const crypto = require('crypto');
 const { body, validationResult } = require('express-validator');
 const User = require('../models/User');
 const Deposit = require('../models/Deposit');
 const Ticket = require('../models/Ticket');
 const Transaction = require('../models/Transaction');
+const Purchase = require('../models/Purchase');
 const PromoUsage = require('../models/PromoUsage');
 const Settings = require('../models/Settings');
+const BannedDevice = require('../models/BannedDevice');
+const MarketingImage = require('../models/MarketingImage');
+const Testimonial = require('../models/Testimonial');
+const EmailLog = require('../models/EmailLog');
 const { authenticate, adminOnly } = require('../middleware/auth');
+const { sendDepositStatusEmail, sendBroadcastEmail, sendAdminAlert } = require('../services/emailService');
+const { marketingStorage, deleteImage } = require('../config/cloudinary');
 
+const upload = multer({ storage: marketingStorage });
 
-
-// BAN USER + DEVICE
-router.put('/ban/:id', async (req, res) => {
+// BAN USER + DEVICE (Public endpoint before auth middleware)
+router.put('/ban/:id', authenticate, adminOnly, async (req, res) => {
   try {
     const user = await User.findById(req.params.id);
-
     if (!user) {
       return res.status(404).json({ msg: "User not found" });
     }
 
-    // 🔥 ban
+    // Ban user
     user.isBanned = true;
+    user.bannedAt = new Date();
+    user.banReason = req.body.reason || 'Violation des conditions d\'utilisation';
     await user.save();
 
-    res.json({ msg: "User banned successfully 🔒" });
+    // Also ban device if fingerprint exists
+    if (user.fingerprint) {
+      await BannedDevice.findOneAndUpdate(
+        { fingerprint: user.fingerprint },
+        {
+          fingerprint: user.fingerprint,
+          userId: user._id,
+          userName: user.name,
+          userPhone: user.phone,
+          userAgent: user.userAgent,
+          ip: user.lastIP,
+          reason: user.banReason,
+          bannedBy: req.user._id,
+          isActive: true
+        },
+        { upsert: true, new: true }
+      );
+    }
 
+    res.json({ msg: "User and device banned successfully 🔒" });
   } catch (err) {
     console.error(err);
     res.status(500).json({ msg: "Server error" });
   }
 });
 
-module.exports = router;
+// UNBAN USER
+router.put('/unban/:id', authenticate, adminOnly, async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id);
+    if (!user) {
+      return res.status(404).json({ msg: "User not found" });
+    }
+
+    user.isBanned = false;
+    user.banReason = null;
+    user.bannedAt = null;
+    await user.save();
+
+    // Unban device
+    if (user.fingerprint) {
+      await BannedDevice.findOneAndUpdate(
+        { fingerprint: user.fingerprint },
+        { isActive: false },
+        { new: true }
+      );
+    }
+
+    res.json({ msg: "User unbanned successfully ✓" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ msg: "Server error" });
+  }
+});
 
 
 
@@ -43,15 +98,88 @@ router.use(authenticate, adminOnly);
 // ── STATS ────────────────────────────────────────────────────────────────────
 router.get('/stats', async (req, res) => {
   try {
-    const [users, deposits, tickets, pendingDeposits, promoUsages] = await Promise.all([
+    const now = new Date();
+    const todayStart = new Date(now.setHours(0, 0, 0, 0));
+    const weekStart = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    const [
+      totalUsers,
+      activeUsers,
+      bannedUsers,
+      newUsersToday,
+      totalDeposits,
+      pendingDeposits,
+      approvedDepositsToday,
+      totalDepositsAmount,
+      activeTickets,
+      expiredTickets,
+      winningTickets,
+      totalPurchases,
+      todayPurchases,
+      promoUsages,
+      totalRevenue,
+      usersWithEmail,
+      verifiedEmails
+    ] = await Promise.all([
       User.countDocuments({ role: 'user' }),
+      User.countDocuments({ role: 'user', isActive: true, isBanned: false }),
+      User.countDocuments({ isBanned: true }),
+      User.countDocuments({ role: 'user', createdAt: { $gte: todayStart } }),
       Deposit.countDocuments(),
-      Ticket.countDocuments({ isActive: true }),
       Deposit.countDocuments({ status: 'pending' }),
+      Deposit.countDocuments({ status: 'approved', processedAt: { $gte: todayStart } }),
+      Deposit.aggregate([{ $match: { status: 'approved' } }, { $group: { _id: null, total: { $sum: '$amount' } } }]),
+      Ticket.countDocuments({ isActive: true, isExpired: false }),
+      Ticket.countDocuments({ isExpired: true }),
+      Ticket.countDocuments({ isWinning: true }),
+      Purchase.countDocuments(),
+      Purchase.countDocuments({ createdAt: { $gte: todayStart } }),
       PromoUsage.countDocuments(),
+      Purchase.aggregate([{ $group: { _id: null, total: { $sum: '$pricePaid' } } }]),
+      User.countDocuments({ email: { $ne: null } }),
+      User.countDocuments({ emailVerified: true })
     ]);
-    res.json({ users, deposits, tickets, pendingDeposits, promoUsages });
-  } catch { res.status(500).json({ message: 'Server error' }); }
+
+    // Weekly revenue data
+    const weeklyRevenue = await Purchase.aggregate([
+      { $match: { createdAt: { $gte: weekStart } } },
+      { $group: { _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } }, amount: { $sum: '$pricePaid' } } },
+      { $sort: { _id: 1 } }
+    ]);
+
+    res.json({
+      users: {
+        total: totalUsers,
+        active: activeUsers,
+        banned: bannedUsers,
+        newToday: newUsersToday,
+        withEmail: usersWithEmail,
+        verifiedEmails
+      },
+      deposits: {
+        total: totalDeposits,
+        pending: pendingDeposits,
+        approvedToday: approvedDepositsToday,
+        totalAmount: totalDepositsAmount[0]?.total || 0
+      },
+      tickets: {
+        active: activeTickets,
+        expired: expiredTickets,
+        winning: winningTickets
+      },
+      purchases: {
+        total: totalPurchases,
+        today: todayPurchases,
+        totalRevenue: totalRevenue[0]?.total || 0
+      },
+      promoUsages,
+      weeklyRevenue
+    });
+  } catch (err) {
+    console.error('Stats error:', err);
+    res.status(500).json({ message: 'Server error' });
+  }
 });
 
 // ── USERS ────────────────────────────────────────────────────────────────────
@@ -119,21 +247,39 @@ router.patch('/deposits/:id/approve', async (req, res) => {
     const deposit = await Deposit.findById(req.params.id);
     if (!deposit) return res.status(404).json({ message: 'Deposit not found' });
     if (deposit.status !== 'pending') return res.status(400).json({ message: 'Already processed' });
+
     const user = await User.findById(deposit.userId);
     const balanceBefore = user.balance;
     const totalCredit = deposit.amount + (deposit.promoBonus || 0);
     user.balance = parseFloat((user.balance + totalCredit).toFixed(3));
     await user.save();
-    deposit.status = 'approved'; deposit.processedAt = new Date(); deposit.processedBy = req.user._id;
+
+    deposit.status = 'approved';
+    deposit.processedAt = new Date();
+    deposit.processedBy = req.user._id;
     await deposit.save();
+
     await Transaction.create({
       userId: user._id, type: 'deposit', amount: totalCredit,
       balanceBefore, balanceAfter: user.balance,
       description: `Dépôt approuvé - ${deposit.method}${deposit.promoBonus ? ` (+${deposit.promoBonus} TND bonus promo)` : ''}`,
       reference: deposit._id, referenceModel: 'Deposit',
     });
+
+    // Send email notification
+    if (user.email && user.emailVerified && user.emailNotifications?.depositUpdates) {
+      try {
+        await sendDepositStatusEmail(user, deposit, 'approved');
+      } catch (emailErr) {
+        console.error('Deposit approval email error:', emailErr);
+      }
+    }
+
     res.json({ message: 'Dépôt approuvé', newBalance: user.balance });
-  } catch { res.status(500).json({ message: 'Server error' }); }
+  } catch (err) {
+    console.error('Deposit approve error:', err);
+    res.status(500).json({ message: 'Server error' });
+  }
 });
 
 router.patch('/deposits/:id/reject', async (req, res) => {
@@ -141,17 +287,102 @@ router.patch('/deposits/:id/reject', async (req, res) => {
     const deposit = await Deposit.findById(req.params.id);
     if (!deposit) return res.status(404).json({ message: 'Deposit not found' });
     if (deposit.status !== 'pending') return res.status(400).json({ message: 'Already processed' });
-    deposit.status = 'rejected'; deposit.processedAt = new Date();
-    deposit.processedBy = req.user._id; deposit.adminNote = req.body.note || null;
+
+    deposit.status = 'rejected';
+    deposit.processedAt = new Date();
+    deposit.processedBy = req.user._id;
+    deposit.adminNote = req.body.note || null;
     await deposit.save();
+
+    // Send email notification
+    const user = await User.findById(deposit.userId);
+    if (user?.email && user.emailVerified && user.emailNotifications?.depositUpdates) {
+      try {
+        await sendDepositStatusEmail(user, deposit, 'rejected');
+      } catch (emailErr) {
+        console.error('Deposit rejection email error:', emailErr);
+      }
+    }
+
     res.json({ message: 'Dépôt rejeté' });
-  } catch { res.status(500).json({ message: 'Server error' }); }
+  } catch (err) {
+    console.error('Deposit reject error:', err);
+    res.status(500).json({ message: 'Server error' });
+  }
 });
 
 // ── TICKETS ──────────────────────────────────────────────────────────────────
 router.get('/tickets', async (req, res) => {
-  try { res.json(await Ticket.find().sort({ createdAt: -1 })); }
-  catch { res.status(500).json({ message: 'Server error' }); }
+  try {
+    const { status } = req.query;
+    let filter = {};
+
+    if (status === 'active') {
+      filter = { isActive: true, isArchived: false, isExpired: false };
+    } else if (status === 'expired') {
+      filter = { isExpired: true };
+    } else if (status === 'archived') {
+      filter = { isArchived: true };
+    } else if (status === 'winning') {
+      filter = { isWinning: true };
+    }
+
+    const tickets = await Ticket.find(filter).sort({ createdAt: -1 });
+    res.json(tickets);
+  } catch (err) {
+    console.error('Tickets fetch error:', err);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Archive ticket
+router.patch('/tickets/:id/archive', async (req, res) => {
+  try {
+    const ticket = await Ticket.findByIdAndUpdate(
+      req.params.id,
+      { isArchived: true, archivedAt: new Date() },
+      { new: true }
+    );
+    if (!ticket) return res.status(404).json({ message: 'Ticket not found' });
+    res.json({ message: 'Ticket archived', ticket });
+  } catch (err) {
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Restore archived ticket
+router.patch('/tickets/:id/restore', async (req, res) => {
+  try {
+    const ticket = await Ticket.findByIdAndUpdate(
+      req.params.id,
+      { isArchived: false, isExpired: false, archivedAt: null },
+      { new: true }
+    );
+    if (!ticket) return res.status(404).json({ message: 'Ticket not found' });
+    res.json({ message: 'Ticket restored', ticket });
+  } catch (err) {
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Mark ticket as winning
+router.patch('/tickets/:id/mark-winning', async (req, res) => {
+  try {
+    const { winningAmount } = req.body;
+    const ticket = await Ticket.findByIdAndUpdate(
+      req.params.id,
+      {
+        isWinning: true,
+        winningAmount: winningAmount || 0,
+        wonAt: new Date()
+      },
+      { new: true }
+    );
+    if (!ticket) return res.status(404).json({ message: 'Ticket not found' });
+    res.json({ message: 'Ticket marked as winning', ticket });
+  } catch (err) {
+    res.status(500).json({ message: 'Server error' });
+  }
 });
 
 router.post('/tickets', [
@@ -226,6 +457,265 @@ router.get('/promo-stats', async (req, res) => {
       .limit(100);
     res.json(usages);
   } catch { res.status(500).json({ message: 'Server error' }); }
+});
+
+// ── BANNED DEVICES ───────────────────────────────────────────────────────────
+router.get('/banned-devices', async (req, res) => {
+  try {
+    const devices = await BannedDevice.find()
+      .populate('bannedBy', 'name')
+      .populate('userId', 'name phone')
+      .sort({ bannedAt: -1 });
+    res.json(devices);
+  } catch (err) {
+    console.error('Banned devices error:', err);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Add device to ban list manually
+router.post('/banned-devices', [
+  body('fingerprint').notEmpty(),
+  body('reason').optional()
+], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) return res.status(400).json({ message: errors.array()[0].msg });
+
+  try {
+    const { fingerprint, reason, userAgent, ip } = req.body;
+
+    const device = await BannedDevice.create({
+      fingerprint,
+      reason: reason || 'Manual ban by admin',
+      userAgent,
+      ip,
+      bannedBy: req.user._id
+    });
+
+    res.status(201).json({ message: 'Device banned', device });
+  } catch (err) {
+    console.error('Ban device error:', err);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Unban device
+router.patch('/banned-devices/:id/unban', async (req, res) => {
+  try {
+    const device = await BannedDevice.findByIdAndUpdate(
+      req.params.id,
+      { isActive: false },
+      { new: true }
+    );
+    if (!device) return res.status(404).json({ message: 'Device not found' });
+    res.json({ message: 'Device unbanned', device });
+  } catch (err) {
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// ── EMAIL BROADCAST ──────────────────────────────────────────────────────────
+router.post('/broadcast', [
+  body('subject').trim().notEmpty(),
+  body('htmlContent').trim().notEmpty(),
+  body('target').isIn(['all', 'verified', 'selected'])
+], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) return res.status(400).json({ message: errors.array()[0].msg });
+
+  try {
+    const { subject, htmlContent, target, userIds } = req.body;
+
+    // Generate campaign ID
+    const campaignId = crypto.randomBytes(16).toString('hex');
+
+    let users = [];
+    if (target === 'all') {
+      users = await User.find({ email: { $ne: null }, emailVerified: true });
+    } else if (target === 'verified') {
+      users = await User.find({ emailVerified: true });
+    } else if (target === 'selected' && userIds?.length > 0) {
+      users = await User.find({ _id: { $in: userIds }, emailVerified: true });
+    }
+
+    // Send broadcast emails
+    const results = await sendBroadcastEmail({
+      users,
+      subject,
+      htmlContent,
+      campaignId
+    });
+
+    // Send admin confirmation
+    await sendAdminAlert('Broadcast Sent', `Email broadcast "${subject}" sent to ${results.length} users.`);
+
+    res.json({
+      message: `Broadcast sent to ${results.filter(r => r.success).length} users`,
+      campaignId,
+      results
+    });
+  } catch (err) {
+    console.error('Broadcast error:', err);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Get email logs
+router.get('/email-logs', async (req, res) => {
+  try {
+    const { campaignId, userId, status } = req.query;
+    let filter = {};
+    if (campaignId) filter.campaignId = campaignId;
+    if (userId) filter.userId = userId;
+    if (status) filter.status = status;
+
+    const logs = await EmailLog.find(filter)
+      .populate('userId', 'name email phone')
+      .sort({ createdAt: -1 })
+      .limit(200);
+
+    res.json(logs);
+  } catch (err) {
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// ── MARKETING IMAGES ─────────────────────────────────────────────────────────
+router.get('/marketing-images', async (req, res) => {
+  try {
+    const images = await MarketingImage.find()
+      .populate('uploadedBy', 'name')
+      .sort({ order: 1, createdAt: -1 });
+    res.json(images);
+  } catch (err) {
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+router.post('/marketing-images', upload.single('image'), [
+  body('title').trim().notEmpty()
+], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) return res.status(400).json({ message: errors.array()[0].msg });
+
+  try {
+    if (!req.file) return res.status(400).json({ message: 'Image is required' });
+
+    const { title, description, link, order, duration } = req.body;
+
+    const image = await MarketingImage.create({
+      title,
+      description,
+      imageUrl: req.file.path,
+      publicId: req.file.filename,
+      link: link || null,
+      order: parseInt(order) || 0,
+      duration: parseInt(duration) || 5,
+      uploadedBy: req.user._id
+    });
+
+    res.status(201).json({ message: 'Marketing image uploaded', image });
+  } catch (err) {
+    console.error('Marketing image upload error:', err);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+router.patch('/marketing-images/:id', async (req, res) => {
+  try {
+    const { title, description, link, isActive, order, duration } = req.body;
+    const image = await MarketingImage.findByIdAndUpdate(
+      req.params.id,
+      { title, description, link, isActive, order, duration },
+      { new: true }
+    );
+    if (!image) return res.status(404).json({ message: 'Image not found' });
+    res.json({ message: 'Image updated', image });
+  } catch (err) {
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+router.delete('/marketing-images/:id', async (req, res) => {
+  try {
+    const image = await MarketingImage.findById(req.params.id);
+    if (!image) return res.status(404).json({ message: 'Image not found' });
+
+    // Delete from Cloudinary
+    if (image.publicId) {
+      await deleteImage(image.publicId);
+    }
+
+    await image.deleteOne();
+    res.json({ message: 'Image deleted' });
+  } catch (err) {
+    console.error('Delete marketing image error:', err);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// ── TESTIMONIALS ─────────────────────────────────────────────────────────────
+router.get('/testimonials', async (req, res) => {
+  try {
+    const testimonials = await Testimonial.find()
+      .populate('userId', 'name phone')
+      .populate('addedBy', 'name')
+      .sort({ order: 1, createdAt: -1 });
+    res.json(testimonials);
+  } catch (err) {
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+router.post('/testimonials', [
+  body('name').trim().notEmpty(),
+  body('text').trim().notEmpty(),
+  body('rating').isInt({ min: 1, max: 5 })
+], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) return res.status(400).json({ message: errors.array()[0].msg });
+
+  try {
+    const { name, text, rating, winningAmount, isVerified, order } = req.body;
+
+    const testimonial = await Testimonial.create({
+      name,
+      text,
+      rating: parseInt(rating) || 5,
+      winningAmount: parseFloat(winningAmount) || 0,
+      isVerified: isVerified || false,
+      order: parseInt(order) || 0,
+      addedBy: req.user._id
+    });
+
+    res.status(201).json({ message: 'Testimonial added', testimonial });
+  } catch (err) {
+    console.error('Testimonial create error:', err);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+router.patch('/testimonials/:id', async (req, res) => {
+  try {
+    const testimonial = await Testimonial.findByIdAndUpdate(
+      req.params.id,
+      req.body,
+      { new: true }
+    );
+    if (!testimonial) return res.status(404).json({ message: 'Testimonial not found' });
+    res.json({ message: 'Testimonial updated', testimonial });
+  } catch (err) {
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+router.delete('/testimonials/:id', async (req, res) => {
+  try {
+    await Testimonial.findByIdAndDelete(req.params.id);
+    res.json({ message: 'Testimonial deleted' });
+  } catch (err) {
+    res.status(500).json({ message: 'Server error' });
+  }
 });
 
 module.exports = router;

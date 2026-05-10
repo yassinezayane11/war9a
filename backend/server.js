@@ -10,9 +10,15 @@ const userRoutes = require('./routes/users');
 const depositRoutes = require('./routes/deposits');
 const ticketRoutes = require('./routes/tickets');
 const adminRoutes = require('./routes/admin');
+const emailRoutes = require('./routes/email');
+const publicRoutes = require('./routes/public');
 
 require('./models/Settings');
 require('./models/PromoUsage');
+require('./models/MarketingImage');
+require('./models/Testimonial');
+require('./models/BannedDevice');
+require('./models/EmailLog');
 
 const app = express();
 app.set('trust proxy', 1);
@@ -51,6 +57,8 @@ app.use('/api/users', userRoutes);
 app.use('/api/deposits', depositRoutes);
 app.use('/api/tickets', ticketRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/email', emailRoutes);
+app.use('/api/public', publicRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => res.json({ status: 'ok', app: 'war9a.tn' }));

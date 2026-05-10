@@ -4,7 +4,9 @@ const { body, validationResult } = require('express-validator');
 const User = require('../models/User');
 const Settings = require('../models/Settings');
 const Transaction = require('../models/Transaction');
+const BannedDevice = require('../models/BannedDevice');
 const { generateToken } = require('../middleware/auth');
+const { sendWelcomeEmail, sendVerificationEmail, sendAdminAlert } = require('../services/emailService');
 const rateLimit = require('express-rate-limit');
 
 const authLimiter = rateLimit({
@@ -25,13 +27,15 @@ const errors = validationResult(req);
 if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
 
 try {
-const { phone, name, password, email, referralCode, fingerprint } = req.body;
+const { phone, name, password, email, referralCode, fingerprint, userAgent } = req.body;
+const clientIP = req.ip || req.connection.remoteAddress;
 
-
-// ❌ منع register device banned
-const banned = await User.findOne({ fingerprint, isBanned: true });
-if (banned) {
-  return res.status(403).json({ message: "Appareil bloqué ❌" });
+// Check banned device using BannedDevice model
+if (fingerprint) {
+  const bannedDevice = await BannedDevice.findOne({ fingerprint, isActive: true });
+  if (bannedDevice) {
+    return res.status(403).json({ message: "Appareil bloqué ❌" });
+  }
 }
 
 // check phone/email
@@ -58,13 +62,15 @@ if (referralCode) {
   }
 }
 
-// create user 🔥 (with fingerprint)
+// create user with device info
 const user = await User.create({
   phone,
   name,
   password,
   email: email || null,
-  fingerprint, // 🔥 هنا
+  fingerprint: fingerprint || null,
+  userAgent: userAgent || req.headers['user-agent'],
+  lastIP: clientIP,
   referredBy: referrer?._id || null,
   balance: referralBonus,
 });
@@ -84,16 +90,47 @@ if (referrer && referralBonus > 0) {
   });
 }
 
+// Send welcome email if email provided
+if (email) {
+  try {
+    // Generate verification token
+    const crypto = require('crypto');
+    const verificationToken = crypto.randomBytes(32).toString('hex');
+    user.emailVerificationToken = verificationToken;
+    user.emailVerificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    await user.save();
+
+    const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
+    const verificationUrl = `${FRONTEND_URL}/verify-email?token=${verificationToken}&user=${user._id}`;
+
+    await sendWelcomeEmail(user);
+    await sendVerificationEmail(user, verificationUrl);
+  } catch (emailErr) {
+    console.error('Welcome email error:', emailErr);
+  }
+}
+
+// Send admin alert for new user
+if (email) {
+  try {
+    await sendAdminAlert('New User Registration', `New user registered: ${name} (${phone}) with email: ${email}`);
+  } catch (alertErr) {
+    console.error('Admin alert error:', alertErr);
+  }
+}
+
 const token = generateToken(user._id);
 
 res.status(201).json({
   token,
   user: user.toSafeObject(),
-  bonusApplied: referralBonus || null
+  bonusApplied: referralBonus || null,
+  emailVerificationSent: !!email
 });
 
 
 } catch (err) {
+console.error('Registration error:', err);
 res.status(500).json({ message: 'Erreur serveur' });
 }
 });
@@ -108,8 +145,8 @@ const errors = validationResult(req);
 if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
 
 try {
-const { phone, password, fingerprint } = req.body;
-
+const { phone, password, fingerprint, userAgent } = req.body;
+const clientIP = req.ip || req.connection.remoteAddress;
 
 const user = await User.findOne({ phone });
 if (!user) return res.status(401).json({ message: 'Identifiants invalides' });
@@ -121,17 +158,26 @@ if (!user.isActive) {
   return res.status(403).json({ message: 'Compte désactivé' });
 }
 
-// ❌ check banned device
-const banned = await User.findOne({ fingerprint, isBanned: true });
-if (banned) {
-  return res.status(403).json({ message: "Appareil bloqué ❌" });
+// Check if user is banned
+if (user.isBanned) {
+  return res.status(403).json({ message: "Compte suspendu. Contactez l'administrateur." });
 }
 
-// 🔥 نحفظ fingerprint إذا أول مرة
-if (!user.fingerprint) {
-  user.fingerprint = fingerprint;
-  await user.save();
+// Check banned device using BannedDevice model
+if (fingerprint) {
+  const bannedDevice = await BannedDevice.findOne({ fingerprint, isActive: true });
+  if (bannedDevice) {
+    return res.status(403).json({ message: "Appareil bloqué ❌" });
+  }
 }
+
+// Update device tracking
+if (fingerprint && !user.fingerprint) {
+  user.fingerprint = fingerprint;
+}
+user.userAgent = userAgent || req.headers['user-agent'];
+user.lastIP = clientIP;
+await user.save();
 
 const token = generateToken(user._id);
 
@@ -142,6 +188,7 @@ res.json({
 
 
 } catch (err) {
+console.error('Login error:', err);
 res.status(500).json({ message: 'Erreur serveur' });
 }
 });
