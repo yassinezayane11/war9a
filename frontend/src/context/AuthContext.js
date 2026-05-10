@@ -10,27 +10,47 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const token = localStorage.getItem('token');
-    if (token) {
-      api.get('/users/me')
-        .then(r => { setUser(r.data); localStorage.setItem('user', JSON.stringify(r.data)); })
-        .catch(() => { localStorage.clear(); setUser(null); })
-        .finally(() => setLoading(false));
-    } else {
-      setLoading(false);
-    }
+    let mounted = true;
+
+    const init = async () => {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        if (mounted) setLoading(false);
+        return;
+      }
+
+      try {
+        const r = await api.get('/users/me');
+        if (!mounted) return;
+        setUser(r.data);
+        localStorage.setItem('user', JSON.stringify(r.data));
+      } catch {
+        if (!mounted) return;
+        localStorage.clear();
+        setUser(null);
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    };
+
+    init();
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   const login = (token, userData) => {
     localStorage.setItem('token', token);
     localStorage.setItem('user', JSON.stringify(userData));
     setUser(userData);
+    setLoading(false);
   };
 
   const logout = () => {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
     setUser(null);
+    setLoading(false);
   };
 
   const refreshUser = async () => {
