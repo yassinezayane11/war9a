@@ -16,12 +16,30 @@
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
+html {
+  scroll-behavior: smooth;
+  overflow-x: hidden;
+}
+
 body {
   background: var(--bg);
   color: var(--text);
   font-family: 'DM Sans', system-ui, sans-serif;
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+  touch-action: pan-y pinch-zoom;
+}
+
+/* Prevent text overflow on mobile */
+h1, h2, h3, h4, h5, h6, p {
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
+/* Mobile tap highlight color */
+* {
+  -webkit-tap-highlight-color: transparent;
 }
 
 /* Custom scrollbar */
@@ -128,6 +146,24 @@ body::before {
 .swiper-pagination-bullet-active {
   background: var(--accent) !important;
   opacity: 1;
+}
+
+/* Mobile Swiper improvements */
+@media (max-width: 640px) {
+  .swiper {
+    touch-action: pan-y;
+  }
+  .swiper-slide {
+    height: auto;
+  }
+  .swiper-pagination {
+    bottom: 8px !important;
+  }
+  .swiper-pagination-bullet {
+    width: 8px !important;
+    height: 8px !important;
+    margin: 0 3px !important;
+  }
 }
 
 /* Watermark pattern background */
