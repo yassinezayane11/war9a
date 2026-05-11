@@ -10,6 +10,7 @@ const apiInstance = new SibApiV3Sdk.TransactionalEmailsApi();
 
 const FROM_EMAIL = process.env.FROM_EMAIL || 'noreply@war9a.tn';
 const FROM_NAME = process.env.FROM_NAME || 'WAR9A.TN';
+const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
 
 /**
  * Send email via Brevo and log to database
@@ -323,7 +324,7 @@ async function sendNewTicketNotification(user, ticket) {
           <p>Price: <strong>${ticket.price} TND</strong></p>
           <p>Success Probability: <strong>${ticket.successProbability}%</strong></p>
           <center>
-            <a href="${process.env.FRONTEND_URL}/tickets" class="btn">View Ticket</a>
+            <a href="${FRONTEND_URL}/tickets" class="btn">View Ticket</a>
           </center>
         </div>
         <div class="footer">
