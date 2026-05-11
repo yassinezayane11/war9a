@@ -255,9 +255,9 @@ export default function LandingPage() {
             initial="initial"
             animate="animate"
             variants={staggerContainer}
-            className="grid lg:grid-cols-2 gap-12 items-center"
+            className="flex flex-col lg:flex-row gap-8 lg:gap-12 items-center"
           >
-            <div>
+            <div className="w-full lg:w-1/2 overflow-hidden">
               <motion.div variants={fadeInUp} className="mb-6">
                 <span className="inline-flex items-center gap-2 bg-brand-500/10 text-brand-400 px-4 py-2 rounded-full text-sm border border-brand-500/20">
                   <span className="w-2 h-2 bg-brand-500 rounded-full animate-pulse" />
@@ -286,7 +286,7 @@ export default function LandingPage() {
             </div>
 
             {/* Marketing Carousel */}
-            <motion.div variants={fadeInUp} className="relative w-full">
+            <motion.div variants={fadeInUp} className="relative w-full lg:w-1/2 overflow-hidden">
               {marketingImages.length > 0 ? (
                 <Swiper
                   modules={[Autoplay, Pagination, EffectFade]}
@@ -294,25 +294,27 @@ export default function LandingPage() {
                   autoplay={{ delay: 5000, disableOnInteraction: false }}
                   pagination={{ clickable: true }}
                   loop
-                  className="rounded-2xl overflow-hidden"
+                  className="rounded-2xl overflow-hidden w-full"
                 >
                   {marketingImages.map((img) => (
                     <SwiperSlide key={img._id}>
-                      <div className="aspect-video bg-dark-800 w-full">
+                      <div className="relative w-full overflow-hidden">
                         <img
                           src={img.imageUrl}
                           alt={img.title}
-                          className="w-full h-full object-cover"
+                          className="w-full h-auto max-w-full object-cover"
                         />
                       </div>
                     </SwiperSlide>
                   ))}
                 </Swiper>
               ) : (
-                <div className="aspect-video bg-gradient-to-br from-brand-500/20 to-dark-800 rounded-2xl flex items-center justify-center border border-dark-600 w-full">
-                  <div className="text-center px-4">
-                    <div className="text-4xl sm:text-6xl mb-4">🎯</div>
-                    <div className="text-gray-400 text-sm sm:text-base">Pronostics Premium</div>
+                <div className="w-full overflow-hidden rounded-2xl">
+                  <div className="aspect-video bg-gradient-to-br from-brand-500/20 to-dark-800 rounded-2xl flex items-center justify-center border border-dark-600 w-full">
+                    <div className="text-center px-4">
+                      <div className="text-4xl sm:text-6xl mb-4">🎯</div>
+                      <div className="text-gray-400 text-sm sm:text-base">Pronostics Premium</div>
+                    </div>
                   </div>
                 </div>
               )}
@@ -329,7 +331,7 @@ export default function LandingPage() {
             whileInView="animate"
             viewport={{ once: true }}
             variants={staggerContainer}
-            className="grid grid-cols-2 md:grid-cols-4 gap-4"
+            className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4"
           >
             {stats && (
               <>
