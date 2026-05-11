@@ -16,7 +16,7 @@ const Testimonial = require('../models/Testimonial');
 const EmailLog = require('../models/EmailLog');
 const { authenticate, adminOnly } = require('../middleware/auth');
 const { sendDepositStatusEmail, sendBroadcastEmail, sendAdminAlert } = require('../services/emailService');
-const { marketingStorage, deleteImage } = require('../config/cloudinary');
+const { marketingStorage, ticketStorage, deleteImage } = require('../config/cloudinary');
 
 const upload = multer({ storage: marketingStorage });
 
@@ -598,21 +598,72 @@ router.patch('/tickets/:id/mark-winning', async (req, res) => {
   }
 });
 
-router.post('/tickets', [
-  body('title').trim().notEmpty(),
-  body('price').isFloat({ min: 0 }),
-  body('globalOdds').isFloat({ min: 1 }),
-  body('matches').isArray({ min: 1 }),
-], async (req, res) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) return res.status(400).json({ message: errors.array()[0].msg });
+// Multer upload instance for tickets
+const ticketUpload = multer({ storage: ticketStorage });
+
+router.post('/tickets', ticketUpload.single('image'), async (req, res) => {
   try {
-    for (const m of req.body.matches) {
-      if (!m.team1?.trim() || !m.team2?.trim() || !m.betType?.trim() || !m.odds)
-        return res.status(400).json({ message: 'Tous les champs de match sont obligatoires' });
+    // Parse JSON fields from form data
+    const matches = JSON.parse(req.body.matches || '[]');
+    const title = req.body.title?.trim();
+    const price = parseFloat(req.body.price);
+    const globalOdds = parseFloat(req.body.globalOdds);
+    const expirationDate = req.body.expirationDate ? new Date(req.body.expirationDate) : null;
+    const description = req.body.description?.trim() || '';
+    const successProbability = req.body.successProbability ? parseFloat(req.body.successProbability) : undefined;
+    const showOdds = req.body.showOdds === 'true' || req.body.showOdds === true;
+    const category = req.body.category || 'Football';
+
+    // Validation
+    if (!title) return res.status(400).json({ message: 'Le titre est obligatoire' });
+    if (isNaN(price) || price < 0) return res.status(400).json({ message: 'Le prix est invalide' });
+    if (isNaN(globalOdds) || globalOdds < 1) return res.status(400).json({ message: 'La cote globale est invalide' });
+    if (!matches || matches.length === 0) return res.status(400).json({ message: 'Au moins un match est requis' });
+    if (!expirationDate) return res.status(400).json({ message: 'La date d\'expiration est obligatoire' });
+
+    // Validate each match
+    for (let i = 0; i < matches.length; i++) {
+      const m = matches[i];
+      if (!m.team1?.trim() || !m.team2?.trim() || !m.betType?.trim() || !m.odds || !m.matchDate) {
+        return res.status(400).json({ message: `Match ${i + 1}: Tous les champs sont obligatoires (équipes, type de pari, cote, date)` });
+      }
+      if (parseFloat(m.odds) < 1) {
+        return res.status(400).json({ message: `Match ${i + 1}: La cote doit être >= 1` });
+      }
     }
-    res.status(201).json(await Ticket.create(req.body));
-  } catch (err) { res.status(500).json({ message: 'Server error', error: err.message }); }
+
+    // Find first match date
+    const matchDates = matches.map(m => new Date(m.matchDate)).filter(d => !isNaN(d));
+    const firstMatchDate = matchDates.length > 0 ? new Date(Math.min(...matchDates)) : null;
+
+    // Prepare ticket data
+    const ticketData = {
+      title,
+      price,
+      globalOdds,
+      expirationDate,
+      firstMatchDate,
+      description,
+      successProbability,
+      showOdds,
+      category,
+      matches: matches.map(m => ({
+        team1: m.team1.trim(),
+        team2: m.team2.trim(),
+        betType: m.betType.trim(),
+        odds: parseFloat(m.odds),
+        matchDate: new Date(m.matchDate),
+        league: m.league?.trim() || ''
+      })),
+      image: req.file?.path || null
+    };
+
+    const ticket = await Ticket.create(ticketData);
+    res.status(201).json(ticket);
+  } catch (err) {
+    console.error('Ticket creation error:', err);
+    res.status(500).json({ message: 'Server error', error: err.message });
+  }
 });
 
 router.put('/tickets/:id', async (req, res) => {

@@ -3,8 +3,8 @@ import ReactDOM from 'react-dom';
 import { toast } from 'react-toastify';
 import api from '../../api';
 
-const emptyMatch = { team1: '', team2: '', betType: '', odds: '' };
-const emptyTicket = { title: '', price: '', globalOdds: '', description: '', successProbability: '', showOdds: true, category: 'Football', matches: [{ ...emptyMatch }] };
+const emptyMatch = { team1: '', team2: '', betType: '', odds: '', matchDate: '', league: '' };
+const emptyTicket = { title: '', price: '', globalOdds: '', description: '', successProbability: '', showOdds: true, category: 'Football', expirationDate: '', image: null, matches: [{ ...emptyMatch }] };
 
 function Portal({ children }) {
   return ReactDOM.createPortal(children, document.body);
@@ -84,6 +84,16 @@ function MatchEditor({ match, index, onChange, onRemove, canRemove }) {
           <input type="number" className="input text-sm py-2 font-mono" placeholder="1.50" min="1" step="0.01"
             value={match.odds} onChange={e => onChange('odds', e.target.value)} required />
         </div>
+        <div>
+          <label className="label text-xs">Date du match *</label>
+          <input type="datetime-local" className="input text-sm py-2"
+            value={match.matchDate} onChange={e => onChange('matchDate', e.target.value)} required />
+        </div>
+        <div>
+          <label className="label text-xs">Ligue</label>
+          <input className="input text-sm py-2" placeholder="ex: Ligue 1, Premier League..." value={match.league}
+            onChange={e => onChange('league', e.target.value)} />
+        </div>
       </div>
     </div>
   );
@@ -99,7 +109,11 @@ function TicketForm({ initial, onSave, onCancel }) {
       successProbability: initial.successProbability?.toString() ?? '',
       matches: (initial.matches || [{ ...emptyMatch }]).map(m => ({
         team1: m.team1 ?? '', team2: m.team2 ?? '', betType: m.betType ?? '', odds: m.odds?.toString() ?? '',
-      }))
+        matchDate: m.matchDate ? new Date(m.matchDate).toISOString().slice(0, 16) : '',
+        league: m.league ?? ''
+      })),
+      expirationDate: initial.expirationDate ? new Date(initial.expirationDate).toISOString().slice(0, 16) : '',
+      image: initial.image || null
     };
   });
 
@@ -122,21 +136,41 @@ function TicketForm({ initial, onSave, onCancel }) {
     e.preventDefault();
     if (!form.title.trim()) return toast.error('Le titre est obligatoire');
     if (!form.price || parseFloat(form.price) < 0) return toast.error('Le prix est invalide');
+    if (!form.expirationDate) return toast.error('La date d\'expiration est obligatoire');
     for (let i = 0; i < form.matches.length; i++) {
       const m = form.matches[i];
       if (!m.team1.trim()) return toast.error(`Match ${i + 1}: Équipe 1 obligatoire`);
       if (!m.team2.trim()) return toast.error(`Match ${i + 1}: Équipe 2 obligatoire`);
       if (!m.betType.trim()) return toast.error(`Match ${i + 1}: Type de pari obligatoire`);
       if (!m.odds || parseFloat(m.odds) < 1) return toast.error(`Match ${i + 1}: Cote invalide (min 1)`);
+      if (!m.matchDate) return toast.error(`Match ${i + 1}: Date du match obligatoire`);
     }
-    onSave({
-      title: form.title.trim(), price: parseFloat(form.price),
-      globalOdds: parseFloat(form.globalOdds) || 1,
-      description: form.description.trim(),
-      successProbability: form.successProbability ? parseFloat(form.successProbability) : undefined,
-      showOdds: form.showOdds, category: form.category,
-      matches: form.matches.map(m => ({ team1: m.team1.trim(), team2: m.team2.trim(), betType: m.betType.trim(), odds: parseFloat(m.odds) }))
-    });
+    
+    // Create FormData for multipart/form-data
+    const formData = new FormData();
+    formData.append('title', form.title.trim());
+    formData.append('price', form.price);
+    formData.append('globalOdds', form.globalOdds || '1');
+    formData.append('description', form.description.trim());
+    formData.append('successProbability', form.successProbability || '');
+    formData.append('showOdds', form.showOdds ? 'true' : 'false');
+    formData.append('category', form.category);
+    formData.append('expirationDate', form.expirationDate);
+    formData.append('matches', JSON.stringify(form.matches.map(m => ({
+      team1: m.team1.trim(),
+      team2: m.team2.trim(),
+      betType: m.betType.trim(),
+      odds: parseFloat(m.odds),
+      matchDate: m.matchDate,
+      league: m.league?.trim() || ''
+    }))));
+    
+    // Add image file if exists
+    if (form.imageFile) {
+      formData.append('image', form.imageFile);
+    }
+    
+    onSave(formData);
   };
 
   return (
@@ -173,6 +207,11 @@ function TicketForm({ initial, onSave, onCancel }) {
           <textarea className="input resize-none" rows={3} placeholder="Description..."
             value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} />
         </div>
+        <div>
+          <label className="label">Date d'expiration *</label>
+          <input type="datetime-local" className="input text-sm py-2"
+            value={form.expirationDate} onChange={e => setForm(f => ({ ...f, expirationDate: e.target.value }))} required />
+        </div>
         <div className="sm:col-span-2 flex items-center gap-3">
           <label className="relative inline-flex items-center cursor-pointer">
             <input type="checkbox" className="sr-only peer" checked={form.showOdds}
@@ -181,6 +220,28 @@ function TicketForm({ initial, onSave, onCancel }) {
             <div className="absolute left-1 top-1 w-4 h-4 bg-white rounded-full transition-all peer-checked:translate-x-5" />
           </label>
           <span className="text-sm text-gray-300">Afficher les cotes publiquement</span>
+        </div>
+        <div className="sm:col-span-2">
+          <label className="label">Image du ticket</label>
+          <div className="flex items-center gap-4">
+            <input
+              type="file"
+              accept="image/*"
+              className="input text-sm py-2 flex-1"
+              onChange={e => {
+                const file = e.target.files[0];
+                if (file) {
+                  setForm(f => ({ ...f, imageFile: file, imagePreview: URL.createObjectURL(file) }));
+                }
+              }}
+            />
+            {form.imagePreview && (
+              <img src={form.imagePreview} alt="Preview" className="w-16 h-16 object-cover rounded-lg" />
+            )}
+            {form.image && !form.imagePreview && (
+              <img src={form.image} alt="Current" className="w-16 h-16 object-cover rounded-lg" />
+            )}
+          </div>
         </div>
       </div>
 
@@ -222,10 +283,21 @@ export default function AdminTickets() {
 
   const handleSave = async (data) => {
     try {
-      if (mode === 'create') { await api.post('/admin/tickets', data); toast.success('Ticket créé!'); }
-      else { await api.put(`/admin/tickets/${mode}`, data); toast.success('Ticket mis à jour!'); }
+      if (mode === 'create') {
+        // FormData for create (with image upload)
+        const config = { headers: { 'Content-Type': 'multipart/form-data' } };
+        await api.post('/admin/tickets', data, config);
+        toast.success('Ticket créé!');
+      } else {
+        // JSON for update
+        await api.put(`/admin/tickets/${mode}`, data);
+        toast.success('Ticket mis à jour!');
+      }
       setMode(null); setEditData(null); fetchTickets();
-    } catch (err) { toast.error(err.response?.data?.message || 'Erreur'); }
+    } catch (err) {
+      console.error('Save error:', err);
+      toast.error(err.response?.data?.message || err.response?.data?.error || 'Erreur');
+    }
   };
 
   const closeModal = () => { setMode(null); setEditData(null); };
