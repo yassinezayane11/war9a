@@ -86,7 +86,7 @@ router.post('/', authenticate, depositLimiter,
       const todayCount = await Deposit.countDocuments({ userId: req.user._id, createdAt: { $gte: todayStart } });
       if (todayCount >= 3) {
         // Delete from Cloudinary
-        if (req.file.public_id) await deleteImage(req.file.public_id);
+        if (req.file?.filename) await deleteImage(req.file.filename);
         return res.status(429).json({ message: 'Maximum 3 dépôts par jour atteint.' });
       }
 
@@ -101,14 +101,14 @@ router.post('/', authenticate, depositLimiter,
 
       // Duplicate screenshot hash check
       if (screenshotHash && await Deposit.findOne({ screenshotHash })) {
-        if (req.file.public_id) await deleteImage(req.file.public_id);
+        if (req.file?.filename) await deleteImage(req.file.filename);
         return res.status(409).json({ message: "Cette capture d'écran a déjà été utilisée." });
       }
 
       // Duplicate orange code
       const cleanOrangeCode = (method === 'ORANGE' && orangeCode?.trim()) ? orangeCode.trim() : null;
       if (cleanOrangeCode && await Deposit.findOne({ orangeCode: cleanOrangeCode })) {
-        if (req.file.public_id) await deleteImage(req.file.public_id);
+        if (req.file?.filename) await deleteImage(req.file.filename);
         return res.status(409).json({ message: 'Ce code Orange a déjà été utilisé.' });
       }
 
@@ -119,21 +119,21 @@ router.post('/', authenticate, depositLimiter,
       if (cleanPromo) {
         const settings = await Settings.findOne({ key: 'payment' });
         if (!settings?.promoEnabled) {
-          if (req.file.public_id) await deleteImage(req.file.public_id);
+          if (req.file?.filename) await deleteImage(req.file.filename);
           return res.status(400).json({ message: 'Le système de promo est désactivé.' });
         }
         promoOwner = await User.findOne({ promoCode: cleanPromo });
         if (!promoOwner) {
-          if (req.file.public_id) await deleteImage(req.file.public_id);
+          if (req.file?.filename) await deleteImage(req.file.filename);
           return res.status(400).json({ message: 'Code promo invalide.' });
         }
         if (promoOwner._id.toString() === req.user._id.toString()) {
-          if (req.file.public_id) await deleteImage(req.file.public_id);
+          if (req.file?.filename) await deleteImage(req.file.filename);
           return res.status(400).json({ message: 'Vous ne pouvez pas utiliser votre propre code promo.' });
         }
         const alreadyUsed = await PromoUsage.findOne({ userId: req.user._id, promoCode: cleanPromo });
         if (alreadyUsed) {
-          if (req.file.public_id) await deleteImage(req.file.public_id);
+          if (req.file?.filename) await deleteImage(req.file.filename);
           return res.status(409).json({ message: 'Vous avez déjà utilisé ce code promo.' });
         }
         promoBonus = settings?.promoBonusOnDeposit ?? 2;
@@ -178,8 +178,8 @@ router.post('/', authenticate, depositLimiter,
       res.status(201).json({ message: 'Demande de dépôt envoyée avec succès.', deposit, promoBonus });
     } catch (err) {
       // Delete from Cloudinary on error
-      if (req.file?.public_id) {
-        await deleteImage(req.file.public_id);
+      if (req.file?.filename) {
+        await deleteImage(req.file.filename);
       }
       if (err.code === 11000) return res.status(409).json({ message: "Capture d'écran ou code Orange en double." });
       res.status(500).json({ message: 'Erreur serveur', error: err.message });
