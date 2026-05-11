@@ -15,6 +15,9 @@ export default function AdminEmailBroadcast() {
   });
   const [selectedUsers, setSelectedUsers] = useState([]);
   const [results, setResults] = useState(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [allUsers, setAllUsers] = useState([]); // All users with any email
+  const [verifiedUsers, setVerifiedUsers] = useState([]); // Only verified users
 
   useEffect(() => {
     fetchUsers();
@@ -24,11 +27,20 @@ export default function AdminEmailBroadcast() {
   const fetchUsers = async () => {
     try {
       const res = await api.get('/admin/users');
-      // Filter users with verified emails
-      const verifiedUsers = res.data.filter(u => u.email && u.emailVerified);
-      setUsers(verifiedUsers);
+      // Get all users with any valid email
+      const usersWithEmail = res.data.filter(u => u.email && u.email.trim() !== '');
+      // Get only verified users
+      const verifiedOnly = usersWithEmail.filter(u => u.emailVerified);
+      
+      setAllUsers(usersWithEmail);
+      setVerifiedUsers(verifiedOnly);
+      setUsers(usersWithEmail); // Default to all for selection UI
+      
+      console.log(`[Frontend] Total users with email: ${usersWithEmail.length}`);
+      console.log(`[Frontend] Verified users: ${verifiedOnly.length}`);
     } catch (err) {
       toast.error('Erreur de chargement des utilisateurs');
+      console.error('[Frontend] Error fetching users:', err);
     } finally {
       setLoading(false);
     }
@@ -80,6 +92,40 @@ export default function AdminEmailBroadcast() {
     );
   };
 
+  const selectAllUsers = () => {
+    const filtered = getFilteredUsers();
+    const selectable = filtered.filter(u => u.email && u.email.trim() !== '');
+    setSelectedUsers(selectable.map(u => u._id));
+  };
+
+  const unselectAllUsers = () => {
+    setSelectedUsers([]);
+  };
+
+  const getFilteredUsers = () => {
+    if (!searchQuery.trim()) return allUsers;
+    
+    const query = searchQuery.toLowerCase();
+    return allUsers.filter(user => 
+      (user.name && user.name.toLowerCase().includes(query)) ||
+      (user.email && user.email.toLowerCase().includes(query)) ||
+      (user.phone && user.phone.toLowerCase().includes(query))
+    );
+  };
+
+  const getRecipientCount = () => {
+    switch (formData.target) {
+      case 'all':
+        return allUsers.length;
+      case 'verified':
+        return verifiedUsers.length;
+      case 'selected':
+        return selectedUsers.length;
+      default:
+        return 0;
+    }
+  };
+
   const insertTemplate = (template) => {
     const templates = {
       welcome: `<h2>Bienvenue sur WAR9A.TN!</h2><p>Cher client,</p><p>Nous sommes ravis de vous accueillir sur notre plateforme de pronostics premium.</p><p>Commencez à gagner dès maintenant!</p>`,
@@ -107,7 +153,11 @@ export default function AdminEmailBroadcast() {
       {/* Stats */}
       <div className="grid grid-cols-3 gap-4">
         <div className="card text-center">
-          <div className="text-2xl font-bold text-brand-400">{users.length}</div>
+          <div className="text-2xl font-bold text-brand-400">{allUsers.length}</div>
+          <div className="text-sm text-gray-500">Utilisateurs avec email</div>
+        </div>
+        <div className="card text-center">
+          <div className="text-2xl font-bold text-green-400">{verifiedUsers.length}</div>
           <div className="text-sm text-gray-500">Emails vérifiés</div>
         </div>
         <div className="card text-center">
@@ -192,30 +242,79 @@ export default function AdminEmailBroadcast() {
 
           {/* User Selection */}
           {formData.target === 'selected' && (
-            <div className="bg-dark-700 rounded-xl p-4 max-h-60 overflow-y-auto">
-              <div className="text-sm text-gray-500 mb-2">
-                Sélectionnez les utilisateurs ({selectedUsers.length} sélectionnés):
+            <div className="bg-dark-700 rounded-xl p-4">
+              <div className="flex items-center justify-between mb-3">
+                <div className="text-sm text-gray-500">
+                  <span className="text-brand-400 font-semibold">{selectedUsers.length}</span> utilisateurs sélectionnés sur <span className="text-white">{getFilteredUsers().length}</span> filtrés
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={selectAllUsers}
+                    className="text-xs bg-dark-600 hover:bg-dark-500 text-gray-400 px-3 py-1.5 rounded transition-colors"
+                  >
+                    Tout sélectionner
+                  </button>
+                  <button
+                    type="button"
+                    onClick={unselectAllUsers}
+                    className="text-xs bg-dark-600 hover:bg-dark-500 text-gray-400 px-3 py-1.5 rounded transition-colors"
+                  >
+                    Tout désélectionner
+                  </button>
+                </div>
               </div>
+              
+              {/* Search */}
+              <div className="mb-3">
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  placeholder="Rechercher par nom, email ou téléphone..."
+                  className="input text-sm py-2"
+                />
+              </div>
+              
               {loading ? (
                 <div className="text-center py-4">
                   <div className="w-6 h-6 border-2 border-brand-500 border-t-transparent rounded-full animate-spin mx-auto" />
                 </div>
               ) : (
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                  {users.map(user => (
-                    <label key={user._id} className="flex items-center gap-2 p-2 rounded hover:bg-dark-600 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={selectedUsers.includes(user._id)}
-                        onChange={() => toggleUserSelection(user._id)}
-                        className="w-4 h-4 rounded"
-                      />
-                      <div className="min-w-0">
-                        <div className="text-white text-sm truncate">{user.name}</div>
-                        <div className="text-gray-500 text-xs truncate">{user.email}</div>
-                      </div>
-                    </label>
-                  ))}
+                <div className="max-h-60 overflow-y-auto pr-2 space-y-1">
+                  {getFilteredUsers().length === 0 ? (
+                    <div className="text-center py-4 text-gray-500 text-sm">
+                      Aucun utilisateur trouvé
+                    </div>
+                  ) : (
+                    getFilteredUsers().map(user => (
+                      <label 
+                        key={user._id} 
+                        className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-colors ${
+                          selectedUsers.includes(user._id) ? 'bg-brand-500/20 border border-brand-500/30' : 'hover:bg-dark-600 border border-transparent'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedUsers.includes(user._id)}
+                          onChange={() => toggleUserSelection(user._id)}
+                          className="w-4 h-4 rounded flex-shrink-0"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <div className="text-white text-sm font-medium truncate">{user.name || 'Sans nom'}</div>
+                            {user.emailVerified && (
+                              <span className="text-xs text-green-400 flex-shrink-0">✓</span>
+                            )}
+                          </div>
+                          <div className="text-gray-500 text-xs truncate">{user.email}</div>
+                          {user.phone && (
+                            <div className="text-gray-600 text-xs truncate">{user.phone}</div>
+                          )}
+                        </div>
+                      </label>
+                    ))
+                  )}
                 </div>
               )}
             </div>
@@ -232,7 +331,7 @@ export default function AdminEmailBroadcast() {
                 Envoi en cours...
               </span>
             ) : (
-              `Envoyer (${formData.target === 'selected' ? selectedUsers.length : users.length} destinataires)`
+              `Envoyer (${getRecipientCount()} destinataires)`
             )}
           </button>
         </form>

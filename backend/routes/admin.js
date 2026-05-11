@@ -744,11 +744,25 @@ router.post('/broadcast', [
 
     let users = [];
     if (target === 'all') {
-      users = await User.find({ email: { $ne: null }, emailVerified: true });
+      // All users with any valid email (verified or not)
+      users = await User.find({
+        email: { $exists: true, $ne: null, $ne: '' }
+      });
+      console.log(`[Broadcast] Target 'all': found ${users.length} users with emails`);
     } else if (target === 'verified') {
-      users = await User.find({ emailVerified: true });
+      // Only users with verified emails
+      users = await User.find({
+        email: { $exists: true, $ne: null, $ne: '' },
+        emailVerified: true
+      });
+      console.log(`[Broadcast] Target 'verified': found ${users.length} users with verified emails`);
     } else if (target === 'selected' && userIds?.length > 0) {
-      users = await User.find({ _id: { $in: userIds }, emailVerified: true });
+      // Selected users with verified emails only
+      users = await User.find({
+        _id: { $in: userIds },
+        email: { $exists: true, $ne: null, $ne: '' }
+      });
+      console.log(`[Broadcast] Target 'selected': found ${users.length} valid users from ${userIds.length} selected`);
     }
 
     // Send broadcast emails

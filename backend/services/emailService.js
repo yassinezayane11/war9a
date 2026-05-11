@@ -398,7 +398,7 @@ async function sendBroadcastEmail({ users, subject, htmlContent, campaignId }) {
   const results = [];
 
   for (const user of users) {
-    if (!user.email || !user.emailVerified) continue;
+    if (!user.email) continue;
 
     const result = await sendEmail({
       to: user.email,
