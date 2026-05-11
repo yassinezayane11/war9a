@@ -607,34 +607,56 @@ router.post('/tickets', ticketUpload.single('image'), async (req, res) => {
     const matches = JSON.parse(req.body.matches || '[]');
     const title = req.body.title?.trim();
     const price = parseFloat(req.body.price);
-    const globalOdds = parseFloat(req.body.globalOdds);
+    const globalOdds = parseFloat(req.body.globalOdds) || 1;
     const expirationDate = req.body.expirationDate ? new Date(req.body.expirationDate) : null;
     const description = req.body.description?.trim() || '';
     const successProbability = req.body.successProbability ? parseFloat(req.body.successProbability) : undefined;
     const showOdds = req.body.showOdds === 'true' || req.body.showOdds === true;
     const category = req.body.category || 'Football';
+    const matchCount = parseInt(req.body.matchCount) || 0;
 
     // Validation
     if (!title) return res.status(400).json({ message: 'Le titre est obligatoire' });
     if (isNaN(price) || price < 0) return res.status(400).json({ message: 'Le prix est invalide' });
-    if (isNaN(globalOdds) || globalOdds < 1) return res.status(400).json({ message: 'La cote globale est invalide' });
-    if (!matches || matches.length === 0) return res.status(400).json({ message: 'Au moins un match est requis' });
     if (!expirationDate) return res.status(400).json({ message: 'La date d\'expiration est obligatoire' });
 
-    // Validate each match
-    for (let i = 0; i < matches.length; i++) {
-      const m = matches[i];
-      if (!m.team1?.trim() || !m.team2?.trim() || !m.betType?.trim() || !m.odds || !m.matchDate) {
-        return res.status(400).json({ message: `Match ${i + 1}: Tous les champs sont obligatoires (équipes, type de pari, cote, date)` });
+    // Validate matches only if provided
+    let validatedMatches = [];
+    let calculatedMatchCount = matchCount;
+    let firstMatchDate = null;
+
+    if (matches && matches.length > 0) {
+      for (let i = 0; i < matches.length; i++) {
+        const m = matches[i];
+        if (!m.team1?.trim() || !m.team2?.trim() || !m.betType?.trim() || !m.odds || !m.matchDate) {
+          return res.status(400).json({ message: `Match ${i + 1}: Tous les champs sont obligatoires (équipes, type de pari, cote, date)` });
+        }
+        if (parseFloat(m.odds) < 1) {
+          return res.status(400).json({ message: `Match ${i + 1}: La cote doit être >= 1` });
+        }
       }
-      if (parseFloat(m.odds) < 1) {
-        return res.status(400).json({ message: `Match ${i + 1}: La cote doit être >= 1` });
-      }
+
+      validatedMatches = matches.map(m => ({
+        team1: m.team1.trim(),
+        team2: m.team2.trim(),
+        betType: m.betType.trim(),
+        odds: parseFloat(m.odds),
+        matchDate: new Date(m.matchDate),
+        league: m.league?.trim() || ''
+      }));
+
+      // Calculate match count from matches if provided
+      calculatedMatchCount = validatedMatches.length;
+
+      // Find first match date
+      const matchDates = validatedMatches.map(m => m.matchDate).filter(d => !isNaN(d));
+      firstMatchDate = matchDates.length > 0 ? new Date(Math.min(...matchDates)) : null;
     }
 
-    // Find first match date
-    const matchDates = matches.map(m => new Date(m.matchDate)).filter(d => !isNaN(d));
-    const firstMatchDate = matchDates.length > 0 ? new Date(Math.min(...matchDates)) : null;
+    // Require at least matches or image
+    if (validatedMatches.length === 0 && !req.file && matchCount === 0) {
+      return res.status(400).json({ message: 'Ajoutez des matchs manuellement, téléchargez une capture, ou indiquez le nombre de matchs' });
+    }
 
     // Prepare ticket data
     const ticketData = {
@@ -647,14 +669,8 @@ router.post('/tickets', ticketUpload.single('image'), async (req, res) => {
       successProbability,
       showOdds,
       category,
-      matches: matches.map(m => ({
-        team1: m.team1.trim(),
-        team2: m.team2.trim(),
-        betType: m.betType.trim(),
-        odds: parseFloat(m.odds),
-        matchDate: new Date(m.matchDate),
-        league: m.league?.trim() || ''
-      })),
+      matches: validatedMatches,
+      matchCount: calculatedMatchCount,
       image: req.file?.path || null
     };
 

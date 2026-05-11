@@ -80,12 +80,14 @@ function VisibleWatermark({ watermark }) {
 }
 
 // Locked Preview - for non-purchased tickets
-function LockedPreview() {
+function LockedPreview({ matchCount }) {
   return (
     <div className="bg-dark-700/50 rounded-xl p-6 mb-4 border border-dark-500">
       <div className="flex flex-col items-center justify-center py-8">
         <div className="text-5xl mb-4">🔒</div>
-        <div className="text-brand-400 font-semibold mb-2">Contenu Verrouillé</div>
+        <div className="text-brand-400 font-semibold mb-2">
+          {matchCount > 0 ? `${matchCount} match${matchCount > 1 ? 's' : ''}` : 'Matchs cachés'}
+        </div>
         <div className="text-sm text-gray-500 text-center max-w-xs">
           Achetez ce ticket pour voir les détails complets des matchs et les pronostics
         </div>
@@ -198,9 +200,16 @@ function TicketCard({ ticket, onPurchase }) {
           {ticket.matches?.map((m, i) => (
             <MatchRow key={i} match={m} showOdds={ticket.showOdds} />
           ))}
+          {/* Show ticket screenshot if available */}
+          {ticket.image && (
+            <div className="mt-4 pt-4 border-t border-dark-600">
+              <div className="text-xs text-gray-500 mb-2">Ticket screenshot</div>
+              <img src={ticket.image} alt="Ticket" className="w-full rounded-lg" />
+            </div>
+          )}
         </div>
       ) : (
-        <LockedPreview />
+        <LockedPreview matchCount={ticket.matchCount || ticket.matches?.length || 0} />
       )}
 
       {/* Purchase Button */}

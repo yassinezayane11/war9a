@@ -4,7 +4,7 @@ import { toast } from 'react-toastify';
 import api from '../../api';
 
 const emptyMatch = { team1: '', team2: '', betType: '', odds: '', matchDate: '', league: '' };
-const emptyTicket = { title: '', price: '', globalOdds: '', description: '', successProbability: '', showOdds: true, category: 'Football', expirationDate: '', image: null, matches: [{ ...emptyMatch }] };
+const emptyTicket = { title: '', price: '', globalOdds: '', description: '', successProbability: '', showOdds: true, category: 'Football', expirationDate: '', image: null, matchCount: '', matches: [{ ...emptyMatch }] };
 
 function Portal({ children }) {
   return ReactDOM.createPortal(children, document.body);
@@ -101,19 +101,20 @@ function MatchEditor({ match, index, onChange, onRemove, canRemove }) {
 
 function TicketForm({ initial, onSave, onCancel }) {
   const [form, setForm] = useState(() => {
-    if (!initial) return { ...emptyTicket, matches: [{ ...emptyMatch }] };
+    if (!initial) return { ...emptyTicket, matches: [] };
     return {
       ...initial,
       price: initial.price?.toString() ?? '',
       globalOdds: initial.globalOdds?.toString() ?? '',
       successProbability: initial.successProbability?.toString() ?? '',
-      matches: (initial.matches || [{ ...emptyMatch }]).map(m => ({
+      expirationDate: initial.expirationDate ? new Date(initial.expirationDate).toISOString().slice(0, 16) : '',
+      image: initial.image || null,
+      matchCount: initial.matchCount?.toString() ?? '',
+      matches: initial.matches?.length > 0 ? initial.matches.map(m => ({
         team1: m.team1 ?? '', team2: m.team2 ?? '', betType: m.betType ?? '', odds: m.odds?.toString() ?? '',
         matchDate: m.matchDate ? new Date(m.matchDate).toISOString().slice(0, 16) : '',
         league: m.league ?? ''
-      })),
-      expirationDate: initial.expirationDate ? new Date(initial.expirationDate).toISOString().slice(0, 16) : '',
-      image: initial.image || null
+      })) : []
     };
   });
 
@@ -137,15 +138,37 @@ function TicketForm({ initial, onSave, onCancel }) {
     if (!form.title.trim()) return toast.error('Le titre est obligatoire');
     if (!form.price || parseFloat(form.price) < 0) return toast.error('Le prix est invalide');
     if (!form.expirationDate) return toast.error('La date d\'expiration est obligatoire');
-    for (let i = 0; i < form.matches.length; i++) {
-      const m = form.matches[i];
-      if (!m.team1.trim()) return toast.error(`Match ${i + 1}: Équipe 1 obligatoire`);
-      if (!m.team2.trim()) return toast.error(`Match ${i + 1}: Équipe 2 obligatoire`);
-      if (!m.betType.trim()) return toast.error(`Match ${i + 1}: Type de pari obligatoire`);
-      if (!m.odds || parseFloat(m.odds) < 1) return toast.error(`Match ${i + 1}: Cote invalide (min 1)`);
-      if (!m.matchDate) return toast.error(`Match ${i + 1}: Date du match obligatoire`);
+
+    // Validate matches only if provided
+    let validMatches = [];
+    if (form.matches.length > 0) {
+      for (let i = 0; i < form.matches.length; i++) {
+        const m = form.matches[i];
+        if (m.team1.trim() || m.team2.trim() || m.betType.trim() || m.odds || m.matchDate) {
+          // Partial match - validate all fields
+          if (!m.team1.trim()) return toast.error(`Match ${i + 1}: Équipe 1 obligatoire`);
+          if (!m.team2.trim()) return toast.error(`Match ${i + 1}: Équipe 2 obligatoire`);
+          if (!m.betType.trim()) return toast.error(`Match ${i + 1}: Type de pari obligatoire`);
+          if (!m.odds || parseFloat(m.odds) < 1) return toast.error(`Match ${i + 1}: Cote invalide (min 1)`);
+          if (!m.matchDate) return toast.error(`Match ${i + 1}: Date du match obligatoire`);
+
+          validMatches.push({
+            team1: m.team1.trim(),
+            team2: m.team2.trim(),
+            betType: m.betType.trim(),
+            odds: parseFloat(m.odds),
+            matchDate: m.matchDate,
+            league: m.league?.trim() || ''
+          });
+        }
+      }
     }
-    
+
+    // Require at least matches, image, or matchCount
+    if (validMatches.length === 0 && !form.imageFile && !form.matchCount) {
+      return toast.error('Ajoutez des matchs, téléchargez une image, ou indiquez le nombre de matchs');
+    }
+
     // Create FormData for multipart/form-data
     const formData = new FormData();
     formData.append('title', form.title.trim());
@@ -156,20 +179,14 @@ function TicketForm({ initial, onSave, onCancel }) {
     formData.append('showOdds', form.showOdds ? 'true' : 'false');
     formData.append('category', form.category);
     formData.append('expirationDate', form.expirationDate);
-    formData.append('matches', JSON.stringify(form.matches.map(m => ({
-      team1: m.team1.trim(),
-      team2: m.team2.trim(),
-      betType: m.betType.trim(),
-      odds: parseFloat(m.odds),
-      matchDate: m.matchDate,
-      league: m.league?.trim() || ''
-    }))));
-    
+    formData.append('matchCount', form.matchCount || '');
+    formData.append('matches', JSON.stringify(validMatches));
+
     // Add image file if exists
     if (form.imageFile) {
       formData.append('image', form.imageFile);
     }
-    
+
     onSave(formData);
   };
 
@@ -212,6 +229,11 @@ function TicketForm({ initial, onSave, onCancel }) {
           <input type="datetime-local" className="input text-sm py-2"
             value={form.expirationDate} onChange={e => setForm(f => ({ ...f, expirationDate: e.target.value }))} required />
         </div>
+        <div>
+          <label className="label">Nombre de matchs</label>
+          <input type="number" className="input font-mono" placeholder="3" min="0"
+            value={form.matchCount} onChange={e => setForm(f => ({ ...f, matchCount: e.target.value }))} />
+        </div>
         <div className="sm:col-span-2 flex items-center gap-3">
           <label className="relative inline-flex items-center cursor-pointer">
             <input type="checkbox" className="sr-only peer" checked={form.showOdds}
@@ -247,7 +269,7 @@ function TicketForm({ initial, onSave, onCancel }) {
 
       <div>
         <div className="flex items-center justify-between mb-3">
-          <label className="label mb-0">Matchs *</label>
+          <label className="label mb-0">Matchs (optionnel)</label>
           <button type="button" onClick={addMatch} className="text-sm text-brand-400 hover:text-brand-300 font-medium">+ Ajouter match</button>
         </div>
         <div className="space-y-3">
