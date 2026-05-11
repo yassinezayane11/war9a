@@ -165,39 +165,59 @@ return ( <div className="space-y-6 animate-fadeInUp">
 
       {/* DESKTOP */}
       <div className="hidden md:block card p-0 overflow-hidden">
-        <table className="w-full">
-          <tbody>
-            {filtered.map(u => (
-              <tr key={u._id}>
-                <td>{u.name}</td>
-                <td>{u.phone}</td>
-
-                <td>
-                  {u.role !== 'admin' && (
-                    <>
-                      <button onClick={() => toggleUser(u._id)}>
-                        {u.isActive ? 'Désact.' : 'Activer'}
-                      </button>
-
-                      {/* 🔥 BAN */}
-                      <button
-  onClick={() => banUser(u._id)}
-  style={{
-    background: "red",
-    color: "white",
-    padding: "5px 10px",
-    marginLeft: "10px"
-  }}
->
-  Ban
-</button>
-                    </>
-                  )}
-                </td>
+        <div className="w-full overflow-x-auto">
+          <table className="w-full">
+            <thead className="bg-dark-700">
+              <tr>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider">Utilisateur</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider">Téléphone</th>
+                <th className="px-4 py-3 text-right text-xs font-semibold text-gray-400 uppercase tracking-wider">Actions</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="divide-y divide-dark-600">
+              {filtered.map(u => (
+                <tr key={u._id} className="hover:bg-dark-700/40 transition-colors">
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 bg-dark-600 rounded-xl flex items-center justify-center font-bold text-brand-400">
+                        {u.name?.[0]?.toUpperCase()}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="font-semibold text-white truncate">{u.name}</div>
+                        {u.email && <div className="text-xs text-gray-500 truncate">{u.email}</div>}
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 text-gray-300 font-mono text-sm">+216 {u.phone}</td>
+
+                  <td className="px-4 py-3">
+                    {u.role !== 'admin' ? (
+                      <div className="flex items-center justify-end gap-2 flex-wrap">
+                        <button
+                          onClick={() => toggleUser(u._id)}
+                          className={`text-xs px-3 py-2 rounded-lg whitespace-nowrap ${
+                            u.isActive ? 'btn-danger' : 'btn-success'
+                          }`}
+                        >
+                          {u.isActive ? 'Désact.' : 'Activer'}
+                        </button>
+
+                        <button
+                          onClick={() => banUser(u._id)}
+                          className="text-xs px-3 py-2 rounded-lg whitespace-nowrap bg-red-600/20 text-red-400 border border-red-500/30 hover:bg-red-600/30 transition-colors"
+                        >
+                          Ban
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="text-right text-xs text-gray-500">—</div>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
 
     </>
