@@ -177,6 +177,7 @@ if (fingerprint && !user.fingerprint) {
 }
 user.userAgent = userAgent || req.headers['user-agent'];
 user.lastIP = clientIP;
+user.lastLoginAt = new Date();
 await user.save();
 
 const token = generateToken(user._id);

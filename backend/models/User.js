@@ -23,9 +23,13 @@ const userSchema = new mongoose.Schema({
   fingerprint: { type: String },
   userAgent: { type: String },
   lastIP: { type: String },
+  lastLoginAt: { type: Date, default: null },
   isBanned: { type: Boolean, default: false },
   banReason: { type: String, default: null },
   bannedAt: { type: Date, default: null },
+
+  // Admin notes
+  adminNote: { type: String, default: '' },
   // Notifications
   emailNotifications: {
     newTicket: { type: Boolean, default: true },

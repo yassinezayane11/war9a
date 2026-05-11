@@ -185,9 +185,222 @@ router.get('/stats', async (req, res) => {
 // ── USERS ────────────────────────────────────────────────────────────────────
 router.get('/users', async (req, res) => {
   try {
-    const users = await User.find().select('-password').sort({ createdAt: -1 });
-    res.json(users);
+    const users = await User.aggregate([
+      { $sort: { createdAt: -1 } },
+      {
+        $lookup: {
+          from: 'deposits',
+          let: { uid: '$_id' },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ['$userId', '$$uid'] },
+                    { $eq: ['$status', 'approved'] }
+                  ]
+                }
+              }
+            },
+            {
+              $group: {
+                _id: null,
+                totalAmount: { $sum: '$amount' },
+                count: { $sum: 1 }
+              }
+            }
+          ],
+          as: 'depositStats'
+        }
+      },
+      {
+        $lookup: {
+          from: 'purchases',
+          let: { uid: '$_id' },
+          pipeline: [
+            { $match: { $expr: { $eq: ['$userId', '$$uid'] } } },
+            {
+              $group: {
+                _id: null,
+                totalSpent: { $sum: '$pricePaid' },
+                count: { $sum: 1 },
+                winningCount: { $sum: { $cond: [{ $eq: ['$status', 'won'] }, 1, 0] } }
+              }
+            }
+          ],
+          as: 'purchaseStats'
+        }
+      },
+      {
+        $lookup: {
+          from: 'purchases',
+          let: { uid: '$_id' },
+          pipeline: [
+            { $match: { $expr: { $eq: ['$userId', '$$uid'] } } },
+            { $sort: { createdAt: -1 } },
+            { $limit: 1 },
+            { $project: { ticketId: 1, createdAt: 1, status: 1, pricePaid: 1 } }
+          ],
+          as: 'lastPurchase'
+        }
+      },
+      {
+        $lookup: {
+          from: 'tickets',
+          localField: 'lastPurchase.ticketId',
+          foreignField: '_id',
+          as: 'lastTicket'
+        }
+      },
+      {
+        $lookup: {
+          from: 'promousages',
+          let: { uid: '$_id' },
+          pipeline: [
+            { $match: { $expr: { $eq: ['$ownerId', '$$uid'] } } },
+            { $group: { _id: null, totalEarnings: { $sum: '$bonusAmount' }, count: { $sum: 1 } } }
+          ],
+          as: 'referralStats'
+        }
+      },
+      {
+        $addFields: {
+          deposits: {
+            totalAmount: { $ifNull: [{ $arrayElemAt: ['$depositStats.totalAmount', 0] }, 0] },
+            count: { $ifNull: [{ $arrayElemAt: ['$depositStats.count', 0] }, 0] }
+          },
+          purchases: {
+            totalSpent: { $ifNull: [{ $arrayElemAt: ['$purchaseStats.totalSpent', 0] }, 0] },
+            count: { $ifNull: [{ $arrayElemAt: ['$purchaseStats.count', 0] }, 0] },
+            winningCount: { $ifNull: [{ $arrayElemAt: ['$purchaseStats.winningCount', 0] }, 0] }
+          },
+          lastPurchaseInfo: {
+            createdAt: { $arrayElemAt: ['$lastPurchase.createdAt', 0] },
+            status: { $arrayElemAt: ['$lastPurchase.status', 0] },
+            pricePaid: { $arrayElemAt: ['$lastPurchase.pricePaid', 0] },
+            ticketTitle: { $arrayElemAt: ['$lastTicket.title', 0] }
+          },
+          referral: {
+            earnings: { $ifNull: [{ $arrayElemAt: ['$referralStats.totalEarnings', 0] }, 0] },
+            usages: { $ifNull: [{ $arrayElemAt: ['$referralStats.count', 0] }, 0] }
+          }
+        }
+      },
+      {
+        $project: {
+          password: 0,
+          depositStats: 0,
+          purchaseStats: 0,
+          lastPurchase: 0,
+          lastTicket: 0,
+          referralStats: 0
+        }
+      }
+    ]);
+
+    const fingerprintMap = new Map();
+    for (const u of users) {
+      const fp = u.fingerprint || null;
+      if (!fp) continue;
+      fingerprintMap.set(fp, (fingerprintMap.get(fp) || 0) + 1);
+    }
+
+    const enriched = users.map(u => {
+      const depositTotal = u.deposits?.totalAmount || 0;
+      const purchaseTotal = u.purchases?.totalSpent || 0;
+      const vipLevel = depositTotal >= 500 || purchaseTotal >= 500 ? 'VIP'
+        : depositTotal >= 200 || purchaseTotal >= 200 ? 'Gold'
+        : depositTotal >= 100 || purchaseTotal >= 100 ? 'Silver'
+        : 'Bronze';
+
+      const purchaseCount = u.purchases?.count || 0;
+      const winningCount = u.purchases?.winningCount || 0;
+      const successRate = purchaseCount > 0 ? Math.round((winningCount / purchaseCount) * 100) : 0;
+      const fpDupCount = u.fingerprint ? (fingerprintMap.get(u.fingerprint) || 1) : 0;
+
+      return {
+        ...u,
+        vipLevel,
+        risk: {
+          duplicateFingerprintCount: fpDupCount,
+          hasDuplicateFingerprint: fpDupCount > 1
+        },
+        ticketStats: {
+          purchasedCount: purchaseCount,
+          winningCount,
+          successRate,
+          lastPurchasedAt: u.lastPurchaseInfo?.createdAt || null,
+          lastPurchasedTicketTitle: u.lastPurchaseInfo?.ticketTitle || null
+        },
+        financial: {
+          currentBalance: u.balance || 0,
+          totalDeposits: depositTotal,
+          totalDepositsCount: u.deposits?.count || 0,
+          totalWithdrawals: 0,
+          totalPurchases: purchaseTotal,
+          totalPurchasesCount: purchaseCount,
+          profitLoss: depositTotal - purchaseTotal
+        },
+        referral: {
+          ...u.referral,
+          count: u.referralCount || 0
+        }
+      };
+    });
+
+    res.json(enriched);
   } catch { res.status(500).json({ message: 'Server error' }); }
+});
+
+// GET /admin/users/:id/details — detailed user profile for modal
+router.get('/users/:id/details', async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id).select('-password');
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
+    const [deposits, purchases, transactions, promoUsages] = await Promise.all([
+      Deposit.find({ userId: user._id }).sort({ createdAt: -1 }).limit(50),
+      Purchase.find({ userId: user._id }).populate('ticketId', 'title price category isWinning').sort({ createdAt: -1 }).limit(50),
+      Transaction.find({ userId: user._id }).sort({ createdAt: -1 }).limit(50),
+      PromoUsage.find({ $or: [{ userId: user._id }, { ownerId: user._id }] }).sort({ createdAt: -1 }).limit(50),
+    ]);
+
+    res.json({
+      user,
+      deposits,
+      purchases,
+      transactions,
+      promoUsages
+    });
+  } catch {
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// PATCH /admin/users/:id/note — update admin note
+router.patch('/users/:id/note', async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+    user.adminNote = typeof req.body.note === 'string' ? req.body.note : '';
+    await user.save();
+    res.json({ message: 'Note mise à jour', user: user.toSafeObject() });
+  } catch {
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// DELETE /admin/users/:id — delete account
+router.delete('/users/:id', async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+    if (user.role === 'admin') return res.status(400).json({ message: 'Cannot delete admin account' });
+    await User.deleteOne({ _id: user._id });
+    res.json({ message: 'Compte supprimé' });
+  } catch {
+    res.status(500).json({ message: 'Server error' });
+  }
 });
 
 router.patch('/users/:id/toggle', async (req, res) => {
