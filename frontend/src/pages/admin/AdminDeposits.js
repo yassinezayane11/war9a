@@ -199,6 +199,41 @@ export default function AdminDeposits() {
     if (url) setPreview(url);
   };
 
+  const methodBadge = (method) => {
+    switch (method) {
+      case 'D17':
+        return (
+          <span className="px-3 py-1 bg-blue-500/20 text-blue-400 rounded-full text-xs border border-blue-700/50 font-mono">
+            D17
+          </span>
+        );
+      case 'ORANGE':
+        return (
+          <span className="px-3 py-1 bg-orange-500/20 text-orange-400 rounded-full text-xs border border-orange-700/50 font-mono">
+            Orange Money
+          </span>
+        );
+      case 'virement':
+        return (
+          <span className="px-3 py-1 bg-purple-500/20 text-purple-400 rounded-full text-xs border border-purple-700/50">
+            Virement bancaire
+          </span>
+        );
+      case 'edinar':
+        return (
+          <span className="px-3 py-1 bg-orange-500/20 text-orange-400 rounded-full text-xs border border-orange-700/50">
+            e-Dinar
+          </span>
+        );
+      default:
+        return (
+          <span className="px-3 py-1 bg-gray-500/20 text-gray-400 rounded-full text-xs border border-gray-700/50">
+            {method || 'Autre'}
+          </span>
+        );
+    }
+  };
+
   const filters = [{ val: 'pending', label: 'En attente' }, { val: 'approved', label: 'Approuvés' }, { val: 'rejected', label: 'Rejetés' }, { val: '', label: 'Tous' }];
 
   return (
