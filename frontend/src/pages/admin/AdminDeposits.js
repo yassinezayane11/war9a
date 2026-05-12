@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import ReactDOM from 'react-dom';
 import { toast } from 'react-toastify';
 import api from '../../api';
@@ -6,6 +6,138 @@ import api from '../../api';
 const API_BASE = process.env.REACT_APP_API_URL?.replace('/api', '') || '';
 
 function Portal({ children }) { return ReactDOM.createPortal(children, document.body); }
+
+// Modern lightbox component
+function ImageLightbox({ image, onClose }) {
+  const [isLoading, setIsLoading] = useState(true);
+  const [zoom, setZoom] = useState(1);
+  const [position, setPosition] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const imageRef = useRef();
+
+  const handleImageLoad = () => setIsLoading(false);
+  
+  const handleWheel = (e) => {
+    e.preventDefault();
+    const delta = e.deltaY > 0 ? 0.9 : 1.1;
+    setZoom(prev => Math.min(Math.max(0.5, prev * delta), 3));
+  };
+
+  const handleMouseDown = (e) => {
+    if (zoom > 1) {
+      setIsDragging(true);
+      setDragStart({ x: e.clientX - position.x, y: e.clientY - position.y });
+    }
+  };
+
+  const handleMouseMove = (e) => {
+    if (isDragging && zoom > 1) {
+      setPosition({
+        x: e.clientX - dragStart.x,
+        y: e.clientY - dragStart.y
+      });
+    }
+  };
+
+  const handleMouseUp = () => {
+    setIsDragging(false);
+  };
+
+  const resetZoom = () => {
+    setZoom(1);
+    setPosition({ x: 0, y: 0 });
+  };
+
+  const handleKeyDown = (e) => {
+    if (e.key === 'Escape') onClose();
+    if (e.key === '0') resetZoom();
+  };
+
+  useEffect(() => {
+    document.addEventListener('keydown', handleKeyDown);
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+      document.body.style.overflow = 'unset';
+    };
+  }, []);
+
+  return (
+    <Portal>
+      <div 
+        className="fixed inset-0 z-[9999] flex items-center justify-center p-4"
+        style={{ background: 'rgba(0, 0, 0, 0.95)', backdropFilter: 'blur(8px)' }}
+        onClick={onClose}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseUp}
+      >
+        {/* Loading indicator */}
+        {isLoading && (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div className="w-12 h-12 border-4 border-brand-500 border-t-transparent rounded-full animate-spin" />
+          </div>
+        )}
+        
+        {/* Image container */}
+        <div 
+          className="relative max-w-7xl max-h-[90vh] w-full h-full flex items-center justify-center"
+          onClick={e => e.stopPropagation()}
+          onWheel={handleWheel}
+        >
+          <img
+            ref={imageRef}
+            src={image}
+            alt="Preuve de dépôt"
+            className={`max-w-full max-h-full object-contain rounded-2xl shadow-2xl transition-transform duration-200 ${
+              isDragging && zoom > 1 ? 'cursor-grabbing' : zoom > 1 ? 'cursor-grab' : 'cursor-zoom-in'
+            }`}
+            style={{
+              transform: `scale(${zoom}) translate(${position.x / zoom}px, ${position.y / zoom}px)`,
+              opacity: isLoading ? 0 : 1
+            }}
+            onLoad={handleImageLoad}
+            onMouseDown={handleMouseDown}
+            draggable={false}
+          />
+        </div>
+
+        {/* Controls */}
+        <div className="absolute top-4 right-4 flex gap-2">
+          <button
+            onClick={resetZoom}
+            className="bg-dark-800/90 hover:bg-dark-700 text-white px-3 py-2 rounded-lg border border-dark-600 transition-all text-sm font-medium"
+            title="Réinitialiser le zoom (0)"
+          >
+            🔄
+          </button>
+          <button
+            onClick={onClose}
+            className="bg-dark-800/90 hover:bg-dark-700 text-white px-3 py-2 rounded-lg border border-dark-600 transition-all text-sm font-medium"
+            title="Fermer (Échap)"
+          >
+            ✕
+          </button>
+        </div>
+
+        {/* Instructions */}
+        <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-dark-800/90 px-4 py-2 rounded-lg border border-dark-600">
+          <p className="text-xs text-gray-300 text-center">
+            Molette pour zoomer • Glisser quand zoomé • Échap pour fermer
+          </p>
+        </div>
+
+        {/* Zoom indicator */}
+        {zoom !== 1 && (
+          <div className="absolute top-4 left-4 bg-dark-800/90 px-3 py-1 rounded-lg border border-dark-600">
+            <p className="text-sm text-brand-400 font-medium">{Math.round(zoom * 100)}%</p>
+          </div>
+        )}
+      </div>
+    </Portal>
+  );
+}
 
 export default function AdminDeposits() {
   const [deposits, setDeposits] = useState([]);
@@ -50,9 +182,22 @@ export default function AdminDeposits() {
     finally { setSettingsLoading(false); }
   };
 
-  const methodBadge = (m) => (
-    <span className={`text-xs px-2 py-0.5 rounded-full border font-mono ${m === 'D17' ? 'bg-blue-900/30 text-blue-400 border-blue-700/50' : 'bg-orange-900/30 text-orange-400 border-orange-700/50'}`}>{m}</span>
-  );
+  const getImageUrl = (screenshot) => {
+    if (!screenshot) return null;
+    
+    // If it's already a full URL (Cloudinary), use as-is
+    if (screenshot.startsWith('http')) {
+      return screenshot;
+    }
+    
+    // For backward compatibility with local uploads
+    return `${API_BASE}/uploads/deposits/${screenshot}`;
+  };
+
+  const openPreview = (screenshot) => {
+    const url = getImageUrl(screenshot);
+    if (url) setPreview(url);
+  };
 
   const filters = [{ val: 'pending', label: 'En attente' }, { val: 'approved', label: 'Approuvés' }, { val: 'rejected', label: 'Rejetés' }, { val: '', label: 'Tous' }];
 
@@ -125,13 +270,20 @@ export default function AdminDeposits() {
                 <div className="flex gap-4">
                   {/* Thumbnail */}
                   <div className="flex-shrink-0">
-                    <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-xl overflow-hidden bg-dark-700 cursor-pointer border border-dark-500 hover:border-brand-500 transition-all"
-                      onClick={() => setPreview(`${API_BASE}/uploads/deposits/${d.screenshot}`)}>
-                      <img src={`${API_BASE}/uploads/deposits/${d.screenshot}`} alt="screenshot"
-                        className="w-full h-full object-cover" onError={e => { e.target.style.display = 'none'; }} />
+                    <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-xl overflow-hidden bg-dark-700 cursor-pointer border border-dark-500 hover:border-brand-500 transition-all group"
+                      onClick={() => openPreview(d.screenshot)}>
+                      <img 
+                        src={getImageUrl(d.screenshot)} 
+                        alt="screenshot"
+                        className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-200" 
+                        onError={e => { 
+                          e.target.style.display = 'none'; 
+                          e.target.parentElement.innerHTML = '<div class="w-full h-full flex items-center justify-center text-gray-600 text-2xl">📷</div>';
+                        }} 
+                      />
                     </div>
-                    <div className="text-xs text-center text-brand-400 mt-1 cursor-pointer"
-                      onClick={() => setPreview(`${API_BASE}/uploads/deposits/${d.screenshot}`)}>Agrandir</div>
+                    <div className="text-xs text-center text-brand-400 mt-1 cursor-pointer hover:text-brand-300 transition-colors"
+                      onClick={() => openPreview(d.screenshot)}>Agrandir</div>
                   </div>
 
                   {/* Info grid */}
@@ -180,17 +332,12 @@ export default function AdminDeposits() {
         </div>
       )}
 
-      {/* Screenshot fullscreen preview */}
+      {/* Modern Image Lightbox */}
       {preview && (
-        <Portal>
-          <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.9)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px' }}
-            onClick={() => setPreview(null)}>
-            <div style={{ maxWidth: '720px', width: '100%' }} onClick={e => e.stopPropagation()}>
-              <img src={preview} alt="Preuve" className="w-full rounded-2xl shadow-2xl" />
-              <button onClick={() => setPreview(null)} className="mt-4 w-full btn-secondary">Fermer</button>
-            </div>
-          </div>
-        </Portal>
+        <ImageLightbox 
+          image={preview} 
+          onClose={() => setPreview(null)} 
+        />
       )}
     </div>
   );
